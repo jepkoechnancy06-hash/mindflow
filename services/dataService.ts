@@ -1,6 +1,7 @@
 import { runQuery, ensureSchema } from './db';
 import { Client, Appointment, Note, DocumentFile } from '../types';
 import { MOCK_CLIENTS, MOCK_APPOINTMENTS } from '../constants';
+import { loadUserData } from './storageService';
 
 // --- DATA FETCHING ---
 
@@ -8,8 +9,26 @@ export const fetchUserData = async (userId: string): Promise<{ clients: Client[]
   try {
     return await fetchUserDataInternal(userId);
   } catch (error: any) {
+    // Determine error message safely
+    let errorMsg = 'Unknown error';
+    if (error instanceof Error) {
+        errorMsg = error.message;
+    } else if (typeof error === 'object' && error !== null) {
+        // Handle "isTrusted" event (often a network/websocket error in browser)
+        if ((error as any).isTrusted) {
+            errorMsg = "Network connection failed (isTrusted event). Database likely unreachable.";
+        } else {
+             try {
+                errorMsg = JSON.stringify(error);
+             } catch(e) {
+                errorMsg = String(error);
+             }
+        }
+    } else {
+        errorMsg = String(error);
+    }
+    
     // Auto-recovery: If tables are missing, try to create them and retry the fetch
-    const errorMsg = error.message || error.toString();
     if (errorMsg.includes('relation') || errorMsg.includes('does not exist')) {
       console.warn("Database schema appears to be missing. Attempting to repair...", errorMsg);
       try {
@@ -20,13 +39,15 @@ export const fetchUserData = async (userId: string): Promise<{ clients: Client[]
         return await fetchUserDataInternal(userId);
       } catch (retryError) {
         console.error("Failed to recover from schema error:", retryError);
-        // Fallback to empty state so the app doesn't crash white-screen
-        return { clients: [], appointments: [] };
       }
     }
     
-    console.error("Error fetching user data:", error);
-    return { clients: [], appointments: [] };
+    console.error("Error fetching user data (Switching to offline mode):", errorMsg);
+    
+    // FALLBACK: Load from local storage (Offline Mode)
+    // This ensures the app works even if the DB is unreachable or broken.
+    console.log("Loading offline data...");
+    return loadUserData(userId);
   }
 };
 
@@ -128,13 +149,9 @@ const seedMockData = async (userId: string) => {
   console.log("Seeding Database for new user...");
   
   // Guard: Ensure user exists in DB before seeding clients (Foreign Key Requirement)
-  // This handles the edge case where the DB is empty but the user has a valid session in LocalStorage
   const userCheck = await runQuery('SELECT id FROM users WHERE id = $1', [userId]);
   if (userCheck.length === 0) {
-    console.log("User record missing in DB (likely fresh DB). creating placeholder user record.");
-    // We insert a placeholder user. 
-    // Note: Password hash is dummy here, which effectively forces a re-login if they clear local storage,
-    // but keeps the current session working.
+    console.log("User record missing in DB. Creating placeholder user record.");
     try {
       await runQuery(
         'INSERT INTO users (id, email, name, password_hash) VALUES ($1, $2, $3, $4)', 
@@ -142,12 +159,15 @@ const seedMockData = async (userId: string) => {
       );
     } catch (e) {
       console.warn("Failed to create placeholder user during seed:", e);
-      // We continue, but createClient might fail if FK is strictly enforced
     }
   }
 
+  const idMap = new Map<string, string>();
+
   for (const client of MOCK_CLIENTS) {
     const dbClientId = `${client.id}_${userId}_${Date.now()}`; 
+    idMap.set(client.id, dbClientId);
+
     const mappedClient = { ...client, id: dbClientId };
     
     await createClient(userId, mappedClient);
@@ -158,6 +178,17 @@ const seedMockData = async (userId: string) => {
 
     for (const doc of client.documents) {
       await addDocument(dbClientId, { ...doc, id: `d_${Date.now()}_${Math.random()}` });
+    }
+  }
+
+  // Seed Appointments
+  for (const appt of MOCK_APPOINTMENTS) {
+    // Find the new DB ID for the client
+    const dbClientId = idMap.get(appt.clientId);
+    if (dbClientId) {
+       const dbApptId = `a_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+       const mappedAppt = { ...appt, id: dbApptId, clientId: dbClientId };
+       await createAppointment(userId, mappedAppt);
     }
   }
   
@@ -190,5 +221,14 @@ const seedMockData = async (userId: string) => {
       };
   }));
 
-  return { clients, appointments: [] };
+  const apptRows = await runQuery('SELECT * FROM appointments WHERE user_id = $1', [userId]);
+  const appointments: Appointment[] = apptRows.map((a: any) => ({
+    id: a.id,
+    clientId: a.client_id,
+    date: a.date,
+    durationMinutes: a.duration_minutes,
+    type: a.type as any
+  }));
+
+  return { clients, appointments };
 };
