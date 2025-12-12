@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Clock, ArrowRight, Sun } from 'lucide-react';
+import { Calendar, Clock, ArrowRight, Sun, Database, Loader2 } from 'lucide-react';
 import { Appointment, Client } from '../types';
 import { generateDailyBriefing } from '../services/geminiService';
+import { ensureSchema } from '../services/db';
 
 interface DashboardProps {
   appointments: Appointment[];
@@ -12,6 +13,7 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ appointments, clients, onClientClick, onNavigate }) => {
   const [briefing, setBriefing] = useState<string>("Preparing your daily brief...");
+  const [isFixingDb, setIsFixingDb] = useState(false);
   
   const upcomingAppointments = appointments
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
@@ -22,6 +24,20 @@ const Dashboard: React.FC<DashboardProps> = ({ appointments, clients, onClientCl
   useEffect(() => {
     generateDailyBriefing(appointments, clients).then(setBriefing);
   }, [appointments, clients]);
+
+  const handleFixDb = async () => {
+    if (!confirm("This will attempt to create missing database tables. Continue?")) return;
+    setIsFixingDb(true);
+    try {
+      await ensureSchema();
+      alert("Database schema initialized successfully. Reloading...");
+      window.location.reload();
+    } catch (e: any) {
+      alert("Failed to initialize DB: " + e.message);
+    } finally {
+      setIsFixingDb(false);
+    }
+  };
 
   const today = new Date();
 
@@ -44,7 +60,19 @@ const Dashboard: React.FC<DashboardProps> = ({ appointments, clients, onClientCl
                <Sun className="w-5 h-5 mr-2" />
                <span className="font-sans text-sm font-medium">Morning Session</span>
              </div>
-             <p className="text-ink-400 font-serif italic text-sm">October, 2023</p>
+             
+             {/* Dev Tools / Schema Fix */}
+             <div className="mt-2">
+                <button 
+                  onClick={handleFixDb}
+                  disabled={isFixingDb}
+                  className="flex items-center text-[10px] text-ink-400 hover:text-ink-900 bg-paper-200/50 hover:bg-paper-200 px-2 py-1 rounded transition-colors"
+                  title="Run CREATE TABLE IF NOT EXISTS scripts"
+                >
+                  {isFixingDb ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Database className="w-3 h-3 mr-1" />}
+                  {isFixingDb ? 'Fixing...' : 'Initialize DB'}
+                </button>
+             </div>
           </div>
         </header>
 

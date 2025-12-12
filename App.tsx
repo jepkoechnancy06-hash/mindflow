@@ -11,35 +11,38 @@ import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { initCalendarApi, handleAuthClick, listUpcomingEvents } from './services/calendarService';
-import { loadUserData, saveUserData } from './services/storageService';
+import { fetchUserData, createClient, createAppointment, addNote, addDocument } from './services/dataService';
 
 const AuthenticatedApp: React.FC = () => {
   const { user } = useAuth();
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   
-  // Initialize state with default empty arrays, will be populated by useEffect
   const [clients, setClients] = useState<Client[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(false);
   
   const [isCalendarConnected, setIsCalendarConnected] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Load user data on mount
+  // Load user data from Neon DB on mount
   useEffect(() => {
     if (user?.id) {
-      const data = loadUserData(user.id);
-      setClients(data.clients);
-      setAppointments(data.appointments);
+      const load = async () => {
+        setIsLoadingData(true);
+        try {
+          const data = await fetchUserData(user.id);
+          setClients(data.clients);
+          setAppointments(data.appointments);
+        } catch (e) {
+          console.error("Failed to load data", e);
+        } finally {
+          setIsLoadingData(false);
+        }
+      };
+      load();
     }
   }, [user?.id]);
-
-  // Persist data on changes
-  useEffect(() => {
-    if (user?.id && clients.length > 0) {
-      saveUserData(user.id, clients, appointments);
-    }
-  }, [clients, appointments, user?.id]);
 
   useEffect(() => {
     initCalendarApi((success) => {
@@ -53,7 +56,13 @@ const AuthenticatedApp: React.FC = () => {
            setIsCalendarConnected(true);
            const events = await listUpcomingEvents();
            if (events.length > 0) {
-              setAppointments(events);
+              // We could choose to save these to DB here, 
+              // but for now we keep GCal events in state only (merged view)
+              setAppointments(prev => {
+                  // Merge avoiding duplicates by ID
+                  const newIds = new Set(events.map(e => e.id));
+                  return [...prev.filter(p => !newIds.has(p.id)), ...events];
+              });
            }
         }
      });
@@ -70,7 +79,8 @@ const AuthenticatedApp: React.FC = () => {
     setCurrentView(ViewState.CLIENTS);
   };
 
-  const handleSaveNote = (clientId: string, newNote: Note) => {
+  const handleSaveNote = async (clientId: string, newNote: Note) => {
+    // Optimistic Update
     setClients(prevClients => 
       prevClients.map(client => 
         client.id === clientId 
@@ -78,26 +88,47 @@ const AuthenticatedApp: React.FC = () => {
           : client
       )
     );
+    // DB Update
+    await addNote(clientId, newNote);
   };
 
-  const handleAddClient = (newClient: Client) => {
+  const handleAddClient = async (newClient: Client) => {
+    if (!user) return;
+    // Optimistic Update
     setClients(prev => [...prev, newClient]);
+    // DB Update
+    await createClient(user.id, newClient);
   };
 
-  const handleAddAppointment = (newAppt: Appointment) => {
+  const handleAddAppointment = async (newAppt: Appointment) => {
+    if (!user) return;
+    // Optimistic Update
     setAppointments(prev => [...prev, newAppt]);
+    // DB Update
+    await createAppointment(user.id, newAppt);
   };
 
-  const handleAddDocument = (clientId: string, doc: DocumentFile) => {
+  const handleAddDocument = async (clientId: string, doc: DocumentFile) => {
+    // Optimistic Update
     setClients(prev => prev.map(c => {
         if (c.id === clientId) {
             return { ...c, documents: [...c.documents, doc] };
         }
         return c;
     }));
+    // DB Update
+    await addDocument(clientId, doc);
   };
 
   const renderContent = () => {
+    if (isLoadingData) {
+      return (
+        <div className="flex h-full items-center justify-center text-ink-400 font-serif italic">
+          Retrieving archives...
+        </div>
+      );
+    }
+
     switch (currentView) {
       case ViewState.DASHBOARD:
         return (
