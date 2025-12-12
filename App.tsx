@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, BookMarked } from 'lucide-react';
-import { MOCK_CLIENTS, MOCK_APPOINTMENTS } from './constants';
 import { Client, ViewState, Note, Appointment, DocumentFile } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -8,26 +7,43 @@ import ClientList from './components/ClientList';
 import ClientDetail from './components/ClientDetail';
 import CalendarView from './components/Calendar';
 import VoiceAssistant from './components/VoiceAssistant';
+import Login from './components/Auth/Login';
+import Register from './components/Auth/Register';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { initCalendarApi, handleAuthClick, listUpcomingEvents } from './services/calendarService';
+import { loadUserData, saveUserData } from './services/storageService';
 
-const App: React.FC = () => {
+const AuthenticatedApp: React.FC = () => {
+  const { user } = useAuth();
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
-  const [clients, setClients] = useState<Client[]>(MOCK_CLIENTS);
   
-  // Start with Mock, replace with Real if connected
-  const [appointments, setAppointments] = useState<Appointment[]>(MOCK_APPOINTMENTS);
+  // Initialize state with default empty arrays, will be populated by useEffect
+  const [clients, setClients] = useState<Client[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  
   const [isCalendarConnected, setIsCalendarConnected] = useState(false);
-
-  // Mobile Menu State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // Load user data on mount
   useEffect(() => {
-    // Initialize Google API
+    if (user?.id) {
+      const data = loadUserData(user.id);
+      setClients(data.clients);
+      setAppointments(data.appointments);
+    }
+  }, [user?.id]);
+
+  // Persist data on changes
+  useEffect(() => {
+    if (user?.id && clients.length > 0) {
+      saveUserData(user.id, clients, appointments);
+    }
+  }, [clients, appointments, user?.id]);
+
+  useEffect(() => {
     initCalendarApi((success) => {
-       if (success) {
-          console.log("Google Calendar API Initialized");
-       }
+       if (success) console.log("Google Calendar API Initialized");
     });
   }, []);
 
@@ -46,7 +62,6 @@ const App: React.FC = () => {
   const handleClientSelect = (id: string) => {
     setSelectedClientId(id);
     setCurrentView(ViewState.CLIENT_DETAIL);
-    // On mobile, finding a client should close menu if it was open (though usually covered by View change)
     setIsSidebarOpen(false);
   };
 
@@ -128,8 +143,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-full bg-paper-100 font-sans text-ink-900 overflow-hidden">
-      
-      {/* Mobile Header (Only visible on small screens) */}
+      {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-ink-900 text-paper-50 flex items-center justify-between px-4 z-30 shadow-md">
          <div className="flex items-center space-x-2">
             <BookMarked className="w-6 h-6" />
@@ -153,7 +167,6 @@ const App: React.FC = () => {
         {renderContent()}
       </main>
       
-      {/* Global Voice Assistant Overlay */}
       <VoiceAssistant 
         clients={clients}
         setClients={setClients}
@@ -161,6 +174,31 @@ const App: React.FC = () => {
         setAppointments={setAppointments}
       />
     </div>
+  );
+};
+
+const MainLayout: React.FC = () => {
+  const { user, isLoading } = useAuth();
+  const [authView, setAuthView] = useState<'login' | 'register'>('login');
+
+  if (isLoading) {
+    return <div className="h-screen flex items-center justify-center bg-paper-100 text-ink-500">Loading Journal...</div>;
+  }
+
+  if (!user) {
+    return authView === 'login' 
+      ? <Login onNavigateToRegister={() => setAuthView('register')} />
+      : <Register onNavigateToLogin={() => setAuthView('login')} />;
+  }
+
+  return <AuthenticatedApp />;
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <MainLayout />
+    </AuthProvider>
   );
 };
 

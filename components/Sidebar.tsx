@@ -1,6 +1,7 @@
 import React from 'react';
 import { Home, Users, Calendar, LogOut, BookMarked, Link, X } from 'lucide-react';
 import { ViewState } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 interface SidebarProps {
   currentView: ViewState;
@@ -19,6 +20,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   isOpen = true, // Default open for desktop backward compatibility if not passed
   onClose
 }) => {
+  const { logout, user } = useAuth();
+
   const NavItem = ({ view, icon: Icon, label }: { view: ViewState, icon: any, label: string }) => {
     const isActive = currentView === view;
     return (
@@ -64,7 +67,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                <BookMarked className="w-6 h-6" />
                <span className="font-serif text-xl font-bold italic tracking-wider">MindfulFlow</span>
              </div>
-             <p className="text-xs text-ink-500 mt-2 font-sans px-1">Dr. AI's Journal</p>
+             <p className="text-xs text-ink-500 mt-2 font-sans px-1">Dr. {user?.name.split(' ')[0] || "AI"}'s Journal</p>
            </div>
            {/* Mobile Close Button */}
            <button onClick={onClose} className="md:hidden text-ink-400 hover:text-white">
@@ -99,9 +102,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Footer */}
         <div className="p-6 border-t border-ink-800/50">
-          <button className="flex items-center space-x-3 text-ink-500 hover:text-red-400 transition-colors px-4 py-2">
+          <button 
+            onClick={logout}
+            className="flex items-center space-x-3 text-ink-500 hover:text-red-400 transition-colors px-4 py-2 w-full"
+          >
             <LogOut className="w-4 h-4" />
-            <span className="text-sm font-medium">Close Journal</span>
+            <span className="text-sm font-medium">Close Journal (Logout)</span>
           </button>
         </div>
       </div>
