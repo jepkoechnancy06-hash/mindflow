@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  ArrowLeft, Clock, Send, Paperclip, Save, Sparkles, FileText, X, History, Mic
+  ArrowLeft, Clock, Send, Paperclip, Save, Sparkles, FileText, X, History, Mic, MessageSquare
 } from 'lucide-react';
 import { Client, Note, DocumentFile } from '../types';
 import { generateSessionRecap, analyzeCurrentNote, chatWithFile } from '../services/geminiService';
@@ -26,6 +26,10 @@ const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote 
   const [inputQuery, setInputQuery] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   
+  // Mobile UI States
+  const [mobileTab, setMobileTab] = useState<'history' | 'session'>('session');
+  const [isChatOpen, setIsChatOpen] = useState(false); // Mobile toggle for chat
+  
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Initialization
@@ -50,7 +54,7 @@ const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote 
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, isTyping]);
+  }, [messages, isTyping, isChatOpen]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,39 +92,59 @@ const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote 
   };
 
   return (
-    <div className="h-full flex flex-col bg-paper-100 overflow-hidden">
+    <div className="h-full flex flex-col bg-paper-100 overflow-hidden relative">
       
       {/* Top Bar (Navigation) */}
-      <div className="bg-paper-50 border-b border-paper-200 px-8 py-4 flex items-center justify-between shrink-0 shadow-sm z-10">
-        <div className="flex items-center space-x-6">
-           <button onClick={onBack} className="text-ink-400 hover:text-ink-900 transition-colors flex items-center font-sans text-sm font-medium">
-             <ArrowLeft className="w-4 h-4 mr-2" /> Index
+      <div className="bg-paper-50 border-b border-paper-200 px-4 md:px-8 py-3 md:py-4 flex items-center justify-between shrink-0 shadow-sm z-10">
+        <div className="flex items-center space-x-3 md:space-x-6 overflow-hidden">
+           <button onClick={onBack} className="text-ink-400 hover:text-ink-900 transition-colors flex items-center font-sans text-sm font-medium shrink-0">
+             <ArrowLeft className="w-4 h-4 mr-1 md:mr-2" /> <span className="hidden sm:inline">Index</span>
            </button>
-           <div className="h-6 w-px bg-paper-300"></div>
-           <div>
-              <h1 className="font-serif text-xl font-bold text-ink-900">{client.name}</h1>
-              <p className="font-sans text-xs text-ink-500 tracking-wide uppercase">Case File #{client.id.toUpperCase()}</p>
+           <div className="h-6 w-px bg-paper-300 shrink-0"></div>
+           <div className="truncate">
+              <h1 className="font-serif text-lg md:text-xl font-bold text-ink-900 truncate">{client.name}</h1>
+              <p className="font-sans text-[10px] md:text-xs text-ink-500 tracking-wide uppercase">File #{client.id.toUpperCase()}</p>
            </div>
         </div>
-        <div className="flex items-center space-x-2 text-ink-500 font-mono text-sm">
-           <Clock className="w-4 h-4" />
+        <div className="flex items-center space-x-2 text-ink-500 font-mono text-xs md:text-sm shrink-0">
+           <Clock className="w-3 h-3 md:w-4 md:h-4" />
            <span>{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
         </div>
       </div>
 
+      {/* Mobile Tabs */}
+      <div className="md:hidden flex border-b border-paper-300 bg-paper-100">
+         <button 
+           onClick={() => setMobileTab('history')}
+           className={`flex-1 py-3 text-sm font-medium ${mobileTab === 'history' ? 'bg-paper-50 text-ink-900 border-b-2 border-accent' : 'text-ink-500'}`}
+         >
+           History & Files
+         </button>
+         <button 
+           onClick={() => setMobileTab('session')}
+           className={`flex-1 py-3 text-sm font-medium ${mobileTab === 'session' ? 'bg-white text-ink-900 border-b-2 border-accent' : 'text-ink-500'}`}
+         >
+           Current Session
+         </button>
+      </div>
+
       {/* Main Content Area: Split Notebook */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         
         {/* LEFT PAGE: Reference & History (The "Past") */}
-        <div className="w-1/3 min-w-[350px] bg-paper-100 border-r border-paper-300 flex flex-col relative">
-           <div className="p-6 border-b border-paper-200 bg-paper-50/50">
+        {/* Visible on Desktop, or on Mobile if 'history' tab is active */}
+        <div className={`
+            w-full md:w-1/3 min-w-[300px] bg-paper-100 border-r border-paper-300 flex flex-col relative
+            ${mobileTab === 'history' ? 'flex' : 'hidden md:flex'}
+        `}>
+           <div className="p-4 md:p-6 border-b border-paper-200 bg-paper-50/50">
               <h2 className="font-serif text-lg text-ink-800 italic flex items-center">
                  <History className="w-4 h-4 mr-2 text-ink-400" />
                  Previous Entries
               </h2>
            </div>
            
-           <div className="flex-1 overflow-y-auto p-6 space-y-6">
+           <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 pb-20 md:pb-6">
               {client.notes.map(note => (
                  <div key={note.id} className="relative pl-6 border-l-2 border-paper-300">
                     <div className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-paper-400"></div>
@@ -146,7 +170,10 @@ const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote 
                        {client.documents.map(doc => (
                           <div 
                              key={doc.id}
-                             onClick={() => setActiveFile(doc)}
+                             onClick={() => {
+                               setActiveFile(doc);
+                               setMobileTab('session'); // Auto switch on mobile to view
+                             }}
                              className={`flex items-center p-2 rounded-sm cursor-pointer transition-colors ${
                                 activeFile?.id === doc.id ? 'bg-accent/10 text-accent' : 'hover:bg-paper-200 text-ink-600'
                              }`}
@@ -162,16 +189,20 @@ const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote 
         </div>
 
         {/* RIGHT PAGE: Active Session & Co-pilot (The "Present") */}
-        <div className="flex-1 bg-white flex flex-col relative shadow-[-10px_0_20px_-10px_rgba(0,0,0,0.05)]">
+        {/* Visible on Desktop, or on Mobile if 'session' tab is active */}
+        <div className={`
+           flex-1 bg-white flex flex-col relative shadow-[-10px_0_20px_-10px_rgba(0,0,0,0.05)]
+           ${mobileTab === 'session' ? 'flex' : 'hidden md:flex'}
+        `}>
            
            {/* If viewing a file */}
            {activeFile ? (
-              <div className="flex-1 p-12 overflow-y-auto">
+              <div className="flex-1 p-6 md:p-12 overflow-y-auto pb-24 md:pb-12">
                  <div className="flex justify-between items-center mb-8 border-b border-paper-200 pb-4">
-                    <h2 className="font-serif text-2xl text-ink-900">{activeFile.name}</h2>
+                    <h2 className="font-serif text-xl md:text-2xl text-ink-900 truncate pr-4">{activeFile.name}</h2>
                     <button onClick={() => setActiveFile(null)} className="text-ink-400 hover:text-ink-800"><X className="w-5 h-5" /></button>
                  </div>
-                 <div className="font-mono text-ink-600 leading-loose bg-paper-50 p-8 rounded-sm border border-paper-200 min-h-[500px]">
+                 <div className="font-mono text-sm md:text-base text-ink-600 leading-loose bg-paper-50 p-4 md:p-8 rounded-sm border border-paper-200 min-h-[400px]">
                     [Document Content Viewer Placeholder]<br/><br/>
                     Reading: {activeFile.name}<br/>
                     Type: {activeFile.type}<br/>
@@ -181,9 +212,9 @@ const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote 
            ) : (
               /* Writing Pad */
               <div className="flex-1 flex flex-col">
-                 <div className="p-10 pb-0 max-w-3xl mx-auto w-full flex-1 flex flex-col">
+                 <div className="p-4 md:p-10 pb-20 md:pb-0 max-w-3xl mx-auto w-full flex-1 flex flex-col">
                     <div className="mb-4">
-                       <span className="font-serif text-3xl text-ink-900 border-b-2 border-accent/20 pb-1">
+                       <span className="font-serif text-2xl md:text-3xl text-ink-900 border-b-2 border-accent/20 pb-1">
                           Session Note
                        </span>
                     </div>
@@ -191,12 +222,12 @@ const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote 
                        value={newNoteContent}
                        onChange={(e) => setNewNoteContent(e.target.value)}
                        placeholder="Start writing today's observations..."
-                       className="flex-1 w-full bg-transparent border-none resize-none outline-none font-mono text-lg text-ink-800 leading-[2rem] ruled-lines placeholder:text-ink-300"
+                       className="flex-1 w-full bg-transparent border-none resize-none outline-none font-mono text-base md:text-lg text-ink-800 leading-[1.8rem] md:leading-[2rem] ruled-lines placeholder:text-ink-300"
                        spellCheck={false}
                     />
                     
                     {/* Toolbar */}
-                    <div className="py-6 flex justify-between items-center border-t border-paper-100 mt-4">
+                    <div className="py-4 md:py-6 flex justify-between items-center border-t border-paper-100 mt-auto bg-white sticky bottom-0">
                        <div className="flex space-x-4 text-ink-400">
                           <Mic className="w-5 h-5 hover:text-ink-700 cursor-pointer transition-colors" />
                           <Paperclip className="w-5 h-5 hover:text-ink-700 cursor-pointer transition-colors" />
@@ -204,22 +235,41 @@ const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote 
                        <button 
                           onClick={handleSaveNote}
                           disabled={!newNoteContent}
-                          className="bg-accent text-white px-6 py-2 rounded-full font-sans text-sm font-medium hover:bg-accent-dark transition-colors shadow-lg disabled:opacity-50 disabled:shadow-none flex items-center"
+                          className="bg-accent text-white px-4 md:px-6 py-2 rounded-full font-sans text-sm font-medium hover:bg-accent-dark transition-colors shadow-lg disabled:opacity-50 disabled:shadow-none flex items-center"
                        >
-                          <Save className="w-4 h-4 mr-2" /> Save Entry
+                          <Save className="w-4 h-4 mr-2" /> Save <span className="hidden sm:inline ml-1">Entry</span>
                        </button>
                     </div>
                  </div>
               </div>
            )}
 
-           {/* Floating "Marginalia" (AI Chat) - Logically placed as a side-note */}
-           <div className="absolute right-6 top-6 bottom-24 w-80 pointer-events-none flex flex-col justify-end">
-              <div className="pointer-events-auto bg-white/95 backdrop-blur-sm border border-paper-200 shadow-float rounded-xl overflow-hidden flex flex-col max-h-[60%]">
+           {/* Mobile Chat Toggle Button */}
+           <button 
+             onClick={() => setIsChatOpen(!isChatOpen)}
+             className={`md:hidden absolute bottom-24 right-4 z-20 p-3 rounded-full shadow-lg transition-colors ${
+               isChatOpen ? 'bg-accent text-white' : 'bg-white text-accent border border-accent/20'
+             }`}
+           >
+             <MessageSquare className="w-6 h-6" />
+           </button>
+
+           {/* Floating "Marginalia" (AI Chat) */}
+           {/* Desktop: Absolute positioned. Mobile: Full screen overlay/Modal */}
+           <div className={`
+              transition-all duration-300 ease-in-out
+              md:absolute md:right-6 md:top-6 md:bottom-24 md:w-80 md:pointer-events-none md:flex md:flex-col md:justify-end
+              ${isChatOpen ? 'fixed inset-0 z-50 bg-white/95 p-4 flex flex-col' : 'hidden md:flex'}
+           `}>
+              <div className="pointer-events-auto bg-white/95 backdrop-blur-sm border border-paper-200 shadow-float rounded-xl overflow-hidden flex flex-col h-full md:max-h-[60%]">
                  <div className="bg-paper-100 px-4 py-2 border-b border-paper-200 flex items-center justify-between">
                     <span className="font-sans text-xs font-bold text-ink-500 uppercase tracking-widest flex items-center">
                        <Sparkles className="w-3 h-3 mr-1 text-accent" /> Co-Pilot
                     </span>
+                    {/* Mobile Close Chat */}
+                    <button onClick={() => setIsChatOpen(false)} className="md:hidden text-ink-400">
+                       <X className="w-5 h-5" />
+                    </button>
                  </div>
                  <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-paper-50" ref={scrollRef}>
                     {messages.map((msg) => (

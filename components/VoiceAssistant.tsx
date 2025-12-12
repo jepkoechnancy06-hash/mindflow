@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Mic, MicOff, Loader2, Volume2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Mic, MicOff, Loader2 } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type, FunctionDeclaration } from '@google/genai';
 import { Client, Appointment } from '../types';
 import { decodeAudioData, createPcmBlob, base64ToUint8Array } from '../utils/audioUtils';
+import { createCalendarEvent, listUpcomingEvents } from '../services/calendarService';
 
 interface VoiceAssistantProps {
   clients: Client[];
@@ -29,14 +30,13 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const sessionRef = useRef<any>(null);
   
-  // Playback State
   const nextStartTimeRef = useRef<number>(0);
   const audioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
   // Define Tools
   const scheduleAppointmentTool: FunctionDeclaration = {
     name: 'scheduleAppointment',
-    description: 'Schedule a new appointment for a client.',
+    description: 'Schedule a new appointment for a client using Google Calendar.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -115,11 +115,9 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
       const apiKey = process.env.API_KEY;
       if (!apiKey) throw new Error("API Key missing");
 
-      // Initialize Audio Contexts
       inputContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       outputContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
 
-      // Get User Media
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
@@ -130,7 +128,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
         config: {
           responseModalities: [Modality.AUDIO],
           systemInstruction: {
-             parts: [{ text: "You are a helpful, efficient assistant for a psychologist's organizer app named MindfulFlow. You can schedule appointments and edit client notes. Be concise and professional. If a user wants to edit a note, assume they mean the most recent one unless specified." }]
+             parts: [{ text: "You are a helpful assistant for a psychologist's organizer app. You can schedule appointments on Google Calendar and edit client notes. Be concise. When scheduling, confirming the time." }]
           },
           tools: [{ functionDeclarations: [scheduleAppointmentTool, updateClientNoteTool] }],
         },
@@ -140,7 +138,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
             setIsConnecting(false);
             setIsActive(true);
 
-            // Setup Input Stream
             if (!inputContextRef.current || !streamRef.current) return;
             
             sourceRef.current = inputContextRef.current.createMediaStreamSource(streamRef.current);
@@ -151,7 +148,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
               let sum = 0;
               for(let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
               setVolumeLevel(Math.sqrt(sum / inputData.length));
-
               const pcmBlob = createPcmBlob(inputData);
               sessionPromise.then(session => session.sendRealtimeInput({ media: pcmBlob }));
             };
@@ -160,26 +156,21 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
             processorRef.current.connect(inputContextRef.current.destination);
           },
           onmessage: async (msg: LiveServerMessage) => {
-             // Handle Audio Output
              const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
              if (audioData && outputContextRef.current) {
                const audioBytes = base64ToUint8Array(audioData);
                const audioBuffer = await decodeAudioData(audioBytes, outputContextRef.current);
-               
                const source = outputContextRef.current.createBufferSource();
                source.buffer = audioBuffer;
                source.connect(outputContextRef.current.destination);
-               
                const currentTime = outputContextRef.current.currentTime;
                const startTime = Math.max(currentTime, nextStartTimeRef.current);
                source.start(startTime);
                nextStartTimeRef.current = startTime + audioBuffer.duration;
-               
                audioSourcesRef.current.add(source);
                source.onended = () => audioSourcesRef.current.delete(source);
              }
 
-             // Handle Tool Calls
              if (msg.toolCall) {
                const responses = [];
                for (const call of msg.toolCall.functionCalls) {
@@ -189,26 +180,43 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                     if (call.name === 'scheduleAppointment') {
                        const { clientName, dateTime, durationMinutes, type } = call.args as any;
                        const client = findClient(clientName);
-                       if (client) {
-                          const newAppt: Appointment = {
-                             id: Date.now().toString(),
-                             clientId: client.id,
-                             date: dateTime,
-                             durationMinutes: durationMinutes || 50,
-                             type: type || 'In-Person'
-                          };
-                          setAppointments(prev => [...prev, newAppt]);
-                          result = { status: 'success', message: `Scheduled ${type} appointment with ${client.name} for ${dateTime}` };
-                       } else {
-                          result = { status: 'error', message: `Client ${clientName} not found` };
+                       
+                       // Try to call Google Calendar API
+                       try {
+                         await createCalendarEvent(
+                           `Session with ${client ? client.name : clientName}`,
+                           dateTime,
+                           durationMinutes || 50
+                         );
+                         
+                         // Refresh local state from calendar
+                         const updatedEvents = await listUpcomingEvents();
+                         if (updatedEvents.length > 0) {
+                             setAppointments(updatedEvents);
+                         } else {
+                             // Fallback: Optimistic update if list fails or is empty
+                             const newAppt: Appointment = {
+                                id: Date.now().toString(),
+                                clientId: client ? client.id : 'unknown',
+                                date: dateTime,
+                                durationMinutes: durationMinutes || 50,
+                                type: type || 'In-Person'
+                             };
+                             setAppointments(prev => [...prev, newAppt]);
+                         }
+
+                         result = { status: 'success', message: `Scheduled on Google Calendar: ${type} appointment with ${clientName} for ${dateTime}` };
+                       } catch (apiError: any) {
+                         console.error("Calendar API Error", apiError);
+                         result = { status: 'error', message: `Failed to schedule on Google Calendar: ${apiError.message || 'Check connection'}` };
                        }
+
                     } else if (call.name === 'updateClientNote') {
                        const { clientName, content, mode } = call.args as any;
                        const client = findClient(clientName);
                        if (client) {
                           setClients(prev => prev.map(c => {
                              if (c.id !== client.id) return c;
-                             
                              const notes = [...c.notes];
                              if (notes.length > 0 && mode !== 'replace') {
                                 notes[0] = { ...notes[0], content: notes[0].content + "\n" + content };
@@ -237,17 +245,14 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                      response: { result }
                   });
                }
-
                sessionPromise.then(session => session.sendToolResponse({ functionResponses: responses }));
              }
           },
           onclose: () => {
-            console.log("Session closed");
             cleanupAudio();
             setIsActive(false);
           },
           onerror: (err) => {
-            console.error("Session error", err);
             cleanupAudio();
             setIsActive(false);
             setIsConnecting(false);
