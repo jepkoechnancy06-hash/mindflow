@@ -1,0 +1,7 @@
+{
+  "name": "MindfulFlow - AI Psychologist Organizer",
+  "description": "A comprehensive organizer for psychologists featuring AI-driven session recalls, automatic summaries, client file management, and intelligent scheduling.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
