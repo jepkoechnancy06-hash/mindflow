@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, BookMarked } from 'lucide-react';
 import { MOCK_CLIENTS, MOCK_APPOINTMENTS } from './constants';
-import { Client, ViewState, Note, Appointment } from './types';
+import { Client, ViewState, Note, Appointment, DocumentFile } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import ClientList from './components/ClientList';
@@ -65,6 +65,23 @@ const App: React.FC = () => {
     );
   };
 
+  const handleAddClient = (newClient: Client) => {
+    setClients(prev => [...prev, newClient]);
+  };
+
+  const handleAddAppointment = (newAppt: Appointment) => {
+    setAppointments(prev => [...prev, newAppt]);
+  };
+
+  const handleAddDocument = (clientId: string, doc: DocumentFile) => {
+    setClients(prev => prev.map(c => {
+        if (c.id === clientId) {
+            return { ...c, documents: [...c.documents, doc] };
+        }
+        return c;
+    }));
+  };
+
   const renderContent = () => {
     switch (currentView) {
       case ViewState.DASHBOARD:
@@ -77,9 +94,22 @@ const App: React.FC = () => {
           />
         );
       case ViewState.CLIENTS:
-        return <ClientList clients={clients} onSelectClient={handleClientSelect} />;
+        return (
+          <ClientList 
+            clients={clients} 
+            onSelectClient={handleClientSelect} 
+            onAddClient={handleAddClient}
+          />
+        );
       case ViewState.CALENDAR:
-        return <CalendarView appointments={appointments} clients={clients} />;
+        return (
+          <CalendarView 
+            appointments={appointments} 
+            clients={clients} 
+            onAddAppointment={handleAddAppointment}
+            isCalendarConnected={isCalendarConnected}
+          />
+        );
       case ViewState.CLIENT_DETAIL:
         const client = clients.find(c => c.id === selectedClientId);
         if (!client) return <div>Client not found</div>;
@@ -88,6 +118,7 @@ const App: React.FC = () => {
             client={client} 
             onBack={handleBackToClients}
             onSaveNote={handleSaveNote}
+            onAddDocument={handleAddDocument}
           />
         );
       default:

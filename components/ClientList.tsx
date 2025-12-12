@@ -1,29 +1,58 @@
 import React, { useState } from 'react';
-import { Search, Filter, MoreHorizontal, UserPlus } from 'lucide-react';
+import { Search, Filter, MoreHorizontal, UserPlus, X } from 'lucide-react';
 import { Client } from '../types';
 
 interface ClientListProps {
   clients: Client[];
   onSelectClient: (id: string) => void;
+  onAddClient: (client: Client) => void;
 }
 
-const ClientList: React.FC<ClientListProps> = ({ clients, onSelectClient }) => {
+const ClientList: React.FC<ClientListProps> = ({ clients, onSelectClient, onAddClient }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // New Client Form State
+  const [newName, setNewName] = useState('');
+  const [newDiagnosis, setNewDiagnosis] = useState('');
 
   const filteredClients = clients.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     c.diagnosis?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const handleCreateClient = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim()) return;
+
+    const newClient: Client = {
+      id: `c${Date.now()}`,
+      name: newName,
+      diagnosis: newDiagnosis,
+      status: 'Active',
+      avatar: `https://picsum.photos/200/200?random=${Math.floor(Math.random() * 1000)}`,
+      notes: [],
+      documents: []
+    };
+
+    onAddClient(newClient);
+    setIsModalOpen(false);
+    setNewName('');
+    setNewDiagnosis('');
+  };
+
   return (
-    <div className="flex-1 h-full bg-paper-50 p-4 md:p-8 overflow-hidden flex flex-col">
+    <div className="flex-1 h-full bg-paper-50 p-4 md:p-8 overflow-hidden flex flex-col relative">
        {/* Header */}
        <div className="flex flex-col md:flex-row justify-between md:items-end mb-6 md:mb-10 pb-6 border-b border-ink-900/10 gap-4">
          <div>
             <h1 className="font-serif text-3xl md:text-4xl text-ink-900 mb-2">Patient Index</h1>
             <p className="font-sans text-ink-500">Directory of active case files.</p>
          </div>
-         <button className="bg-ink-900 hover:bg-ink-800 text-paper-50 px-6 py-3 rounded-sm font-medium shadow-book transition-all flex items-center justify-center font-sans tracking-wide text-sm w-full md:w-auto">
+         <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-ink-900 hover:bg-ink-800 text-paper-50 px-6 py-3 rounded-sm font-medium shadow-book transition-all flex items-center justify-center font-sans tracking-wide text-sm w-full md:w-auto"
+         >
             <UserPlus className="w-4 h-4 mr-2" />
             New File
          </button>
@@ -82,6 +111,58 @@ const ClientList: React.FC<ClientListProps> = ({ clients, onSelectClient }) => {
             </div>
           )}
        </div>
+
+       {/* New Client Modal */}
+       {isModalOpen && (
+         <div className="fixed inset-0 bg-ink-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-paper-50 w-full max-w-md rounded-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+               <div className="p-6 border-b border-paper-200 flex justify-between items-center bg-white">
+                  <h2 className="font-serif text-xl font-bold text-ink-800">New Patient File</h2>
+                  <button onClick={() => setIsModalOpen(false)} className="text-ink-400 hover:text-ink-800">
+                     <X className="w-5 h-5" />
+                  </button>
+               </div>
+               <form onSubmit={handleCreateClient} className="p-6 space-y-4">
+                  <div>
+                     <label className="block text-xs font-bold text-ink-500 uppercase tracking-wider mb-1">Patient Name</label>
+                     <input 
+                       type="text" 
+                       required
+                       className="w-full p-3 bg-white border border-paper-300 rounded-sm font-serif text-ink-900 focus:ring-1 focus:ring-accent focus:border-accent outline-none"
+                       placeholder="e.g. John Doe"
+                       value={newName}
+                       onChange={e => setNewName(e.target.value)}
+                     />
+                  </div>
+                  <div>
+                     <label className="block text-xs font-bold text-ink-500 uppercase tracking-wider mb-1">Diagnosis / Concern</label>
+                     <input 
+                       type="text" 
+                       className="w-full p-3 bg-white border border-paper-300 rounded-sm font-sans text-ink-900 focus:ring-1 focus:ring-accent focus:border-accent outline-none"
+                       placeholder="e.g. Anxiety, Depression"
+                       value={newDiagnosis}
+                       onChange={e => setNewDiagnosis(e.target.value)}
+                     />
+                  </div>
+                  <div className="pt-4 flex justify-end space-x-3">
+                     <button 
+                       type="button"
+                       onClick={() => setIsModalOpen(false)}
+                       className="px-4 py-2 text-ink-500 hover:text-ink-900 font-medium text-sm"
+                     >
+                        Cancel
+                     </button>
+                     <button 
+                       type="submit"
+                       className="px-6 py-2 bg-ink-900 text-white rounded-sm font-medium text-sm shadow-md hover:bg-ink-800 transition-colors"
+                     >
+                        Create File
+                     </button>
+                  </div>
+               </form>
+            </div>
+         </div>
+       )}
     </div>
   );
 };

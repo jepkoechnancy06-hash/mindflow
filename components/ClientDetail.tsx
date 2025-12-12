@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  ArrowLeft, Clock, Send, Paperclip, Save, Sparkles, FileText, X, History, Mic, MessageSquare
+  ArrowLeft, Clock, Send, Paperclip, Save, Sparkles, FileText, X, History, Mic, MessageSquare, Upload
 } from 'lucide-react';
 import { Client, Note, DocumentFile } from '../types';
 import { generateSessionRecap, analyzeCurrentNote, chatWithFile } from '../services/geminiService';
@@ -9,6 +9,7 @@ interface ClientDetailProps {
   client: Client;
   onBack: () => void;
   onSaveNote: (clientId: string, note: Note) => void;
+  onAddDocument: (clientId: string, doc: DocumentFile) => void;
 }
 
 interface Message {
@@ -19,7 +20,7 @@ interface Message {
   relatedId?: string; 
 }
 
-const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote }) => {
+const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote, onAddDocument }) => {
   const [activeFile, setActiveFile] = useState<DocumentFile | null>(null);
   const [newNoteContent, setNewNoteContent] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -31,6 +32,7 @@ const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote 
   const [isChatOpen, setIsChatOpen] = useState(false); // Mobile toggle for chat
   
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialization
   useEffect(() => {
@@ -89,6 +91,22 @@ const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote 
     setNewNoteContent('');
     setIsTyping(false);
     setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', text: `Entry saved. Sentiment detected: ${analysis.sentiment}.` }]);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const newDoc: DocumentFile = {
+        id: `d${Date.now()}`,
+        name: file.name,
+        type: file.type,
+        uploadDate: new Date().toISOString().split('T')[0],
+        content: "[Simulated content extracted from uploaded file]" 
+      };
+      onAddDocument(client.id, newDoc);
+      // Optional: Inform chat
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', text: `Attached ${file.name} to patient file.` }]);
+    }
   };
 
   return (
@@ -230,7 +248,15 @@ const ClientDetail: React.FC<ClientDetailProps> = ({ client, onBack, onSaveNote 
                     <div className="py-4 md:py-6 flex justify-between items-center border-t border-paper-100 mt-auto bg-white sticky bottom-0">
                        <div className="flex space-x-4 text-ink-400">
                           <Mic className="w-5 h-5 hover:text-ink-700 cursor-pointer transition-colors" />
-                          <Paperclip className="w-5 h-5 hover:text-ink-700 cursor-pointer transition-colors" />
+                          <button onClick={() => fileInputRef.current?.click()} className="text-ink-400 hover:text-ink-700">
+                              <Paperclip className="w-5 h-5 cursor-pointer transition-colors" />
+                          </button>
+                          <input 
+                             type="file" 
+                             ref={fileInputRef}
+                             className="hidden"
+                             onChange={handleFileUpload}
+                          />
                        </div>
                        <button 
                           onClick={handleSaveNote}
